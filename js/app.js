@@ -9,19 +9,54 @@
   window.App = App;
 
   // ---------------- AUTH ----------------
-  function initLogin() {
+  function showLoginError_(text, err) {
     const msg = document.getElementById('login-msg');
+    msg.textContent = text;
+    msg.className = 'login-msg show'; msg.style.color = '#991B1B';
+    if (err) console.error('[Inventaris] ' + text, err); else console.error('[Inventaris] ' + text);
+  }
+
+  /** Deteksi dini: config.js belum diisi (penyebab #1 login kosong tanpa pesan apapun). */
+  function configBelumDiisi_() {
+    const cid = APP_CONFIG.GOOGLE_CLIENT_ID || '';
+    const url = APP_CONFIG.GAS_URL || '';
+    if (!cid || cid.indexOf('GANTI_DENGAN') > -1) {
+      return 'GOOGLE_CLIENT_ID di js/config.js belum diisi dengan Client ID asli dari Google Cloud Console (lihat PANDUAN-INSTALASI.md Bagian A4 & B).';
+    }
+    if (!url || url.indexOf('GANTI_DENGAN') > -1) {
+      return 'GAS_URL di js/config.js belum diisi dengan URL Web App (diakhiri /exec) hasil deploy backend (lihat PANDUAN-INSTALASI.md Bagian A6 & B).';
+    }
+    return null;
+  }
+
+  /**
+   * Siapkan tombol login Google. Dipanggil berulang (poll) karena tag <script> GSI memakai
+   * async+defer sekaligus — urutan muatnya TIDAK terjamin selesai sebelum app.js jalan, jadi
+   * window.google bisa saja belum ada padahal skripnya akan selesai dimuat sesaat lagi.
+   * Semua kegagalan WAJIB tampil sebagai pesan — sebelumnya initialize()/renderButton() yang
+   * melempar error (mis. client_id tidak valid) membuat layar login kosong tanpa petunjuk sama sekali.
+   */
+  function initLogin(attempt) {
+    attempt = attempt || 0;
+    const masalahConfig = configBelumDiisi_();
+    if (masalahConfig) { showLoginError_(masalahConfig); return; }
+
     if (!window.google || !google.accounts || !google.accounts.id) {
-      msg.textContent = 'Gagal memuat Google Identity Services. Periksa koneksi internet lalu muat ulang halaman.';
-      msg.className = 'login-msg show'; msg.style.color = '#991B1B';
+      if (attempt < 20) { setTimeout(() => initLogin(attempt + 1), 250); return; }
+      showLoginError_('Gagal memuat Google Identity Services (accounts.google.com/gsi/client) setelah menunggu 5 detik. Periksa koneksi internet, nonaktifkan pemblokir iklan/skrip untuk situs ini, lalu muat ulang halaman.');
       return;
     }
-    google.accounts.id.initialize({
-      client_id: APP_CONFIG.GOOGLE_CLIENT_ID,
-      callback: onGoogleCredential,
-      auto_select: true
-    });
-    google.accounts.id.renderButton(document.getElementById('gsi-button-container'), { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'rectangular', width: 280 });
+
+    try {
+      google.accounts.id.initialize({
+        client_id: APP_CONFIG.GOOGLE_CLIENT_ID,
+        callback: onGoogleCredential,
+        auto_select: true
+      });
+      google.accounts.id.renderButton(document.getElementById('gsi-button-container'), { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'rectangular', width: 280 });
+    } catch (err) {
+      showLoginError_('Gagal menyiapkan tombol login Google: ' + (err && err.message ? err.message : err) + '. Kemungkinan GOOGLE_CLIENT_ID salah format, atau domain situs ini belum ditambahkan ke "Authorized JavaScript origins" pada Google Cloud Console (lihat PANDUAN-INSTALASI.md Bagian A4).', err);
+    }
   }
 
   async function onGoogleCredential(response) {
