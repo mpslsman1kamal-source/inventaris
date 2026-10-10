@@ -53,7 +53,18 @@
         callback: onGoogleCredential,
         auto_select: true
       });
-      google.accounts.id.renderButton(document.getElementById('gsi-button-container'), { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'rectangular', width: 280 });
+      const container = document.getElementById('gsi-button-container');
+      google.accounts.id.renderButton(container, { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'rectangular', width: 280 });
+
+      // GSI menolak origin yang tidak terdaftar dengan GAGAL DIAM-DIAM (tidak melempar error JS
+      // yang bisa ditangkap try/catch di atas — hanya mencatat "[GSI_LOGGER] ... not allowed for
+      // the given client ID" ke console). Satu-satunya cara mendeteksinya dari sini: cek apakah
+      // kontainer tombol benar-benar terisi beberapa saat setelah renderButton() dipanggil.
+      setTimeout(() => {
+        if (!container.hasChildNodes()) {
+          showLoginError_('Tombol login Google tidak muncul. Penyebab paling umum: domain "' + location.origin + '" belum ditambahkan ke "Authorized JavaScript origins" pada OAuth Client ID di Google Cloud Console (Credentials → Client ID ini → edit). Buka Console browser (F12 → tab Console) untuk pesan [GSI_LOGGER] yang memastikan ini, lalu lihat PANDUAN-INSTALASI.md Bagian A4.');
+        }
+      }, 1500);
     } catch (err) {
       showLoginError_('Gagal menyiapkan tombol login Google: ' + (err && err.message ? err.message : err) + '. Kemungkinan GOOGLE_CLIENT_ID salah format, atau domain situs ini belum ditambahkan ke "Authorized JavaScript origins" pada Google Cloud Console (lihat PANDUAN-INSTALASI.md Bagian A4).', err);
     }
