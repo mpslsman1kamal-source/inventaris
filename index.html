@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inventaris Barang — SMAN 1 Kamal Bangkalan</title>
+<meta name="description" content="Aplikasi Inventaris Barang SMAN 1 Kamal Bangkalan">
+<link rel="preconnect" href="https://script.google.com">
+<link rel="preconnect" href="https://script.googleusercontent.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<div class="loading-bar" id="loadingBar"></div>
+
+<!-- ======================= LOGIN ======================= -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-badge">IB</div>
+    <h1>Inventaris Barang</h1>
+    <p>SMAN 1 Kamal Bangkalan — masuk dengan akun Google yang terdaftar</p>
+    <div id="gsi-button-container"></div>
+    <div id="login-msg" class="login-msg"></div>
+  </div>
+</div>
+
+<!-- ======================= APP SHELL ======================= -->
+<div id="app-shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="name">INVENTARIS BARANG</span>
+      <span class="sub">SMAN 1 Kamal Bangkalan</span>
+      <div class="role-pill"><span id="rolePillText">—</span></div>
+    </div>
+    <nav id="navMenu"></nav>
+    <div class="foot">
+      <button type="button" id="btnLogout">Keluar Sistem</button>
+      <div class="ver">v1.0 · Google Apps Script + Sheets</div>
+    </div>
+  </aside>
+
+  <header class="topbar">
+    <button id="btnBurger" class="btn btn-secondary btn-sm" style="display:none">☰</button>
+    <div class="crumb"><span>SARPRAS</span><span>/</span><b id="crumbPage">Dashboard</b></div>
+    <div class="who">
+      <div>
+        <span class="nm" id="whoName">—</span>
+        <span class="rl" id="whoRole">—</span>
+      </div>
+      <div class="avatar" id="whoAvatar">?</div>
+    </div>
+  </header>
+
+  <main class="content" id="pageMount"><!-- halaman dirender di sini oleh js/app.js --></main>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Form</h3>
+      <button type="button" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script src="js/vendor/qrcode.min.js" defer></script>
+<script src="js/config.js" defer></script>
+<script src="js/api.js" defer></script>
+<script src="js/ui.js" defer></script>
+<script src="js/pages.js" defer></script>
+<script src="js/app.js" defer></script>
+</body>
+</html>
