@@ -7,7 +7,7 @@ window.APP_CONFIG = {
   GAS_URL: 'https://script.google.com/macros/s/AKfycbz6QqGNzq5SrqQnbHPC5Y5e8iYWLZ7yF-x1_QIpnFFRp5-bLPbLnqMDTiTCxN6OtNYAHA/exec',
 
   // OAuth 2.0 Web Client ID dari Google Cloud Console (dipakai Google Identity Services di login)
-  GOOGLE_CLIENT_ID: 'GANTI_DENGAN_CLIENT_ID.apps.googleusercontent.com',
+  GOOGLE_CLIENT_ID: '205753482502-u4grm39n2lh3bbrv3idt3hftraf6taju.apps.googleusercontent.com,
 
   APP_NAME: 'Inventaris Barang SMAN 1 Kamal Bangkalan',
   LS_PREFIX: 'invbrg:v1:'
