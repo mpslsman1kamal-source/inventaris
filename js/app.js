@@ -73,16 +73,23 @@
   async function onGoogleCredential(response) {
     const msg = document.getElementById('login-msg');
     msg.className = 'login-msg show'; msg.style.color = '#1B1B1B'; msg.textContent = 'Memeriksa akun...';
-    const res = await API.api('login', { idToken: response.credential });
-    if (!res.success) {
+    try {
+      const res = await API.api('login', { idToken: response.credential });
+      if (!res.success) {
+        msg.style.color = '#991B1B';
+        msg.textContent = res.message || 'Login gagal.';
+        return;
+      }
+      API.setToken(res.data.token);
+      API.Store.set(API.userKey('boot'), { t: Date.now(), data: res.data.boot });
+      applyBoot(res.data.user, res.data.boot);
+      enterApp();
+    } catch (err) {
+      // Jangan biarkan layar macet diam-diam di "Memeriksa akun..." — tampilkan errornya.
       msg.style.color = '#991B1B';
-      msg.textContent = res.message || 'Login gagal.';
-      return;
+      msg.textContent = 'Terjadi kesalahan saat memproses login: ' + (err && err.message ? err.message : err);
+      console.error('[Inventaris] onGoogleCredential gagal', err);
     }
-    API.setToken(res.data.token);
-    API.Store.set(API.userKey('boot'), { t: Date.now(), data: res.data.boot });
-    applyBoot(res.data.user, res.data.boot);
-    enterApp();
   }
 
   function applyBoot(user, boot) {
@@ -106,23 +113,45 @@
     API.api('logout', {});
     API.setToken('');
     API.Store.clearAll();
-    // Hapus status "akun diingat" Google Identity Services (penyebab chip email lama masih
-    // tampil di layar login setelah logout) — disableAutoSelect() mencegah one-tap otomatis,
-    // revoke() melepas izin akun ini dari aplikasi di sisi Google agar tombol login kembali
-    // bersih seperti kunjungan pertama. Keduanya aman dipanggil meski GSI belum siap.
-    try {
-      if (window.google && google.accounts && google.accounts.id) {
-        google.accounts.id.disableAutoSelect();
-        if (email) google.accounts.id.revoke(email, () => {});
-      }
-    } catch (e) { console.error('[Inventaris] Gagal membersihkan sesi Google Identity Services', e); }
     location.hash = '';
     document.getElementById('app-shell').classList.remove('show');
     document.getElementById('login-screen').style.display = 'flex';
-    // Bangun ulang tombol login agar tidak menampilkan chip akun lama dari render sebelumnya.
-    const container = document.getElementById('gsi-button-container');
-    if (container) container.innerHTML = '';
-    initLogin();
+
+    // Bangun ulang tombol login agar tidak lagi menampilkan chip akun lama. PENTING: ini
+    // HANYA dipanggil setelah revoke() selesai (lewat callback-nya), bukan langsung sesudah
+    // memanggilnya — membongkar/membuat ulang elemen tombol SAAT revoke() masih berjalan
+    // (keduanya sama-sama memakai iframe/postMessage milik GSI) menyebabkan GSI gagal
+    // menyelesaikan proses internalnya ("Failed to send postmessage to iframe", tombol jadi
+    // rusak dan login berikutnya macet di "Memeriksa akun...").
+    let dibangunUlang = false;
+    function rebuildLoginButton() {
+      if (dibangunUlang) return; // jaga-jaga agar tidak dibangun dua kali (callback + fallback timeout)
+      dibangunUlang = true;
+      const container = document.getElementById('gsi-button-container');
+      const msg = document.getElementById('login-msg');
+      if (msg) { msg.className = 'login-msg'; msg.textContent = ''; }
+      if (container) container.innerHTML = '';
+      initLogin();
+    }
+    try {
+      if (window.google && google.accounts && google.accounts.id) {
+        // disableAutoSelect() mencegah one-tap otomatis memilih akun ini lagi.
+        google.accounts.id.disableAutoSelect();
+        // revoke() melepas izin akun ini dari aplikasi di sisi Google agar tombol login
+        // kembali bersih (tanpa chip) — baru setelah ini selesai, tombol dibangun ulang.
+        if (email) {
+          google.accounts.id.revoke(email, () => rebuildLoginButton());
+          setTimeout(rebuildLoginButton, 2000); // jaring pengaman bila callback revoke() tak pernah terpanggil
+        } else {
+          rebuildLoginButton();
+        }
+      } else {
+        rebuildLoginButton();
+      }
+    } catch (e) {
+      console.error('[Inventaris] Gagal membersihkan sesi Google Identity Services', e);
+      rebuildLoginButton();
+    }
   }
 
   // ---------------- SHELL / NAV ----------------
