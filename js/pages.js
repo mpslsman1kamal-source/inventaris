@@ -6,6 +6,11 @@
 (function () {
   const api = (a, d) => API.api(a, d);
   const el = UI.el;
+  // Baca daftar (list) dengan pola stale-while-revalidate (API.swr, sudah ada di api.js):
+  // tampilkan dari cache lokal dulu bila masih segar, baru panggil server bila perlu.
+  // Mengurangi jeda setiap buka menu/pindah tab/buka form tambah data, tanpa mengubah
+  // bentuk respons ({success, data}) yang dipakai kode di bawah.
+  const apiList = (action, payload, opt) => { opt = opt || {}; return API.swr('list:' + action, action, payload || {}, () => {}, { fresh: opt.fresh || 30000, force: !!opt.force }); };
 
   function can(modul, aksi) {
     const perms = App.state.perms || {};
@@ -159,7 +164,7 @@
   // ------------------------------------------------------------------
   const RUANGAN_CACHE = { data: [] };
   async function loadRefData() {
-    const [kat, rng, ped] = await Promise.all([api('kategoriList', {}), api('ruanganList', {}), api('pegawaiList', {})]);
+    const [kat, rng, ped] = await Promise.all([apiList('kategoriList', {}), apiList('ruanganList', {}), apiList('pegawaiList', {})]);
     return { kategori: kat.success ? kat.data : [], ruangan: rng.success ? rng.data : [], pegawai: ped.success ? ped.data : [] };
   }
 
@@ -188,7 +193,7 @@
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
     let rows = [];
-    async function load() { const res = await api('asetList', {}); rows = res.success ? res.data : []; draw(); }
+    async function load(force) { const res = await apiList('asetList', {}, { force }); rows = res.success ? res.data : []; draw(); }
     function draw() {
       tableMount.innerHTML = '';
       UI.dataTable(tableMount, [
@@ -236,7 +241,7 @@
           }
           const res = await api('asetSave', vals);
           UI.toast(res.message, res.success ? 'success' : 'error');
-          if (res.success) { UI.closeModal(); load(); }
+          if (res.success) { UI.closeModal(); load(true); }
         }
       }, ['Simpan']);
       UI.openModal((isNew ? 'Tambah' : 'Ubah') + ' Aset Tetap', form.node, footBtn);
@@ -276,7 +281,7 @@
     mount.appendChild(toolbar);
     const tableMount = section(mount);
     let rows = [];
-    async function load() { const res = await api('persediaanList', {}); rows = res.success ? res.data : []; draw(); }
+    async function load(force) { const res = await apiList('persediaanList', {}, { force }); rows = res.success ? res.data : []; draw(); }
     function draw() {
       tableMount.innerHTML = '';
       UI.dataTable(tableMount, [
@@ -290,14 +295,14 @@
       const fields = [{ key: 'nama', label: 'Nama Barang', required: true }, { key: 'satuan', label: 'Satuan', required: true },
         isNew ? { key: 'stok_awal', label: 'Stok Awal', type: 'number' } : null, { key: 'stok_minimum', label: 'Stok Minimum', type: 'number' }].filter(Boolean);
       const form = UI.buildForm(fields, row || {});
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); if (!isNew) v.id_barang = row.id_barang; const res = await api('persediaanSave', v); UI.toast(res.message, res.success ? 'success' : 'error'); if (res.success) { UI.closeModal(); load(); } } }, ['Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); if (!isNew) v.id_barang = row.id_barang; const res = await api('persediaanSave', v); UI.toast(res.message, res.success ? 'success' : 'error'); if (res.success) { UI.closeModal(); load(true); } } }, ['Simpan']);
       UI.openModal((isNew ? 'Tambah' : 'Ubah') + ' Barang Persediaan', form.node, footBtn);
     }
     function openStok(tipe) {
       const opts = rows.map(r => ({ value: r.id_barang, label: r.nama + ' (stok: ' + r.stok_saat_ini + ' ' + r.satuan + ')' }));
       const fields = [{ key: 'id_barang', label: 'Barang', type: 'select', options: opts, required: true }, { key: 'jumlah', label: 'Jumlah', type: 'number', required: true }, { key: 'tanggal', label: 'Tanggal', type: 'date', required: true }];
       const form = UI.buildForm(fields, { tanggal: new Date().toISOString().slice(0, 10) });
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const res = await api(tipe === 'masuk' ? 'stokMasuk' : 'stokKeluar', form.getValues()); UI.toast(res.message, res.success ? 'success' : 'error'); if (res.success) { UI.closeModal(); load(); } } }, ['Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const res = await api(tipe === 'masuk' ? 'stokMasuk' : 'stokKeluar', form.getValues()); UI.toast(res.message, res.success ? 'success' : 'error'); if (res.success) { UI.closeModal(); load(true); } } }, ['Simpan']);
       UI.openModal('Barang ' + (tipe === 'masuk' ? 'Masuk' : 'Keluar'), form.node, footBtn);
     }
     function openOpname() {
@@ -308,7 +313,7 @@
       form.node.appendChild(hasilEl);
       const footBtn = el('div', { class: 'flex gap-8' }, [
         el('button', { class: 'btn btn-secondary', onclick: async () => { const r = await api('stockOpname', form.getValues()); if (r.success) hasilEl.textContent = 'Stok aplikasi: ' + r.data.stokAplikasi + ' · Stok fisik: ' + r.data.stokFisik + ' · Selisih: ' + r.data.selisih; } }, ['Hitung Selisih']),
-        el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); v.terapkan = true; const r = await api('stockOpname', v); UI.toast(r.success ? 'Stok disesuaikan.' : r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Terapkan Penyesuaian'])
+        el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); v.terapkan = true; const r = await api('stockOpname', v); UI.toast(r.success ? 'Stok disesuaikan.' : r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Terapkan Penyesuaian'])
       ]);
       UI.openModal('Stock Opname', form.node, footBtn);
     }
@@ -317,7 +322,7 @@
 
   async function renderLabelQr(mount) {
     mount.appendChild(el('div', { class: 'desc mt-8' }, ['Pilih aset untuk membuat label QR. QR dibuat di perangkat Anda lalu dicetak sebagai PDF melalui server.']));
-    const res = await api('asetList', {});
+    const res = await apiList('asetList', {});
     const rows = res.success ? res.data : [];
     const sel = el('select', {}, rows.map(r => el('option', { value: r.id_aset }, [r.id_aset + ' — ' + r.nama])));
     const qrHolder = el('canvas', { id: 'qrCanvas', width: 180, height: 180 });
@@ -364,7 +369,7 @@
   }
   async function listOnly(mount, action, columns) {
     const tableMount = section(mount);
-    const res = await api(action, {});
+    const res = await apiList(action, {});
     UI.dataTable(tableMount, columns, res.success ? res.data : []);
   }
   async function renderBeritaAcara(mount) {
@@ -372,7 +377,7 @@
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
     let rows = [];
-    async function load() { const res = await api('beritaAcaraList', {}); rows = res.success ? res.data : []; draw(); }
+    async function load(force) { const res = await apiList('beritaAcaraList', {}, { force }); rows = res.success ? res.data : []; draw(); }
     function draw() {
       tableMount.innerHTML = '';
       UI.dataTable(tableMount, [
@@ -380,7 +385,7 @@
         { key: 'pihak_1', label: 'Pihak 1' }, { key: 'pihak_2', label: 'Pihak 2' }
       ], rows, { actions: (row) => el('button', { class: 'btn btn-secondary btn-sm', onclick: () => cetak(row) }, ['Cetak PDF']) });
     }
-    async function cetak(row) { const r = await api('cetak_berita_acara', { id_ba: row.id_ba }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); if (r.success) load(); }
+    async function cetak(row) { const r = await api('cetak_berita_acara', { id_ba: row.id_ba }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); if (r.success) load(true); }
     function openForm() {
       const fields = [
         { key: 'jenis', label: 'Jenis', type: 'select', options: [{ value: 'Serah Terima Barang', label: 'Serah Terima Barang' }, { value: 'Mutasi', label: 'Mutasi' }, { value: 'Pemusnahan', label: 'Pemusnahan' }], required: true },
@@ -388,7 +393,7 @@
         { key: 'pihak_2', label: 'Pihak 2 (Penerima)', required: true }, { key: 'ringkasan', label: 'Ringkasan', type: 'textarea', span2: true }
       ];
       const form = UI.buildForm(fields, { tanggal: new Date().toISOString().slice(0, 10) });
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('beritaAcaraSave', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('beritaAcaraSave', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Simpan']);
       UI.openModal('Berita Acara Baru', form.node, footBtn);
     }
     load();
@@ -421,7 +426,7 @@
     const toolbar = can('permintaan', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Ajukan Permintaan']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() { const r = await api('permintaanList', {}); UI.dataTable(tableMount, [
+    async function load(force) { const r = await apiList('permintaanList', {}, { force }); UI.dataTable(tableMount, [
       { key: 'id_permintaan', label: 'ID', type: 'code' }, { key: 'jenis', label: 'Jenis' }, { key: 'id_pemohon', label: 'Pemohon' },
       { key: 'status', label: 'Status', type: 'badge' }, { key: 'dibuat_at', label: 'Diajukan', type: 'tanggal' }, { key: 'catatan', label: 'Catatan Kepsek' }
     ], r.success ? r.data : []); }
@@ -434,7 +439,7 @@
         { key: 'deskripsi', label: 'Deskripsi Usulan (bila Usulan Kebutuhan)', type: 'textarea', span2: true }
       ];
       const form = UI.buildForm(fields, {});
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('permintaanAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Ajukan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('permintaanAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Ajukan']);
       UI.openModal('Ajukan Permintaan', form.node, footBtn);
     }
     load();
@@ -443,12 +448,12 @@
   async function renderPeminjaman(mount) {
     const ref = await loadRefData();
     const pegawaiOpts = ref.pegawai.map(p => ({ value: p.id_pegawai, label: p.nama }));
-    const asetRes = await api('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).filter(a => a.status === 'Tersedia').map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
+    const asetRes = await apiList('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).filter(a => a.status === 'Tersedia').map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
     const toolbar = can('peminjaman', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Ajukan Peminjaman']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() {
-      const r = await api('peminjamanList', {});
+    async function load(force) {
+      const r = await apiList('peminjamanList', {}, { force });
       UI.dataTable(tableMount, [
         { key: 'id_pinjam', label: 'ID', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'id_peminjam', label: 'Peminjam' },
         { key: 'tgl_pinjam', label: 'Tgl Pinjam', type: 'tanggal' }, { key: 'tgl_rencana_kembali', label: 'Rencana Kembali', type: 'tanggal' }, { key: 'status', label: 'Status', type: 'badge' }
@@ -458,13 +463,13 @@
       const fields = [{ key: 'id_aset', label: 'Aset', type: 'select', options: asetOpts, required: true }, { key: 'id_peminjam', label: 'Peminjam', type: 'select', options: pegawaiOpts, required: true },
         { key: 'tgl_pinjam', label: 'Tanggal Pinjam', type: 'date', required: true }, { key: 'tgl_rencana_kembali', label: 'Rencana Kembali', type: 'date', required: true }];
       const form = UI.buildForm(fields, { tgl_pinjam: new Date().toISOString().slice(0, 10) });
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('peminjamanAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Ajukan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('peminjamanAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Ajukan']);
       UI.openModal('Ajukan Peminjaman', form.node, footBtn);
     }
     function openKembali(row) {
       const fields = [{ key: 'tgl_kembali', label: 'Tanggal Kembali', type: 'date', required: true }, { key: 'kondisi_saat_kembali', label: 'Kondisi Saat Kembali', type: 'select', options: [{ value: 'Baik', label: 'Baik' }, { value: 'Rusak Ringan', label: 'Rusak Ringan' }, { value: 'Rusak Berat', label: 'Rusak Berat' }], required: true }];
       const form = UI.buildForm(fields, { tgl_kembali: new Date().toISOString().slice(0, 10) });
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); v.id_pinjam = row.id_pinjam; const r = await api('peminjamanKembalikan', v); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); v.id_pinjam = row.id_pinjam; const r = await api('peminjamanKembalikan', v); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Simpan']);
       UI.openModal('Pengembalian Aset', form.node, footBtn);
     }
     load();
@@ -473,35 +478,35 @@
   async function renderMutasi(mount) {
     const ref = await loadRefData();
     const ruanganOpts = ref.ruangan.map(r => ({ value: r.id_ruangan, label: r.nama_ruangan }));
-    const asetRes = await api('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
+    const asetRes = await apiList('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
     const toolbar = can('mutasi', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Ajukan Mutasi']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() { const r = await api('mutasiList', {}); UI.dataTable(tableMount, [
+    async function load(force) { const r = await apiList('mutasiList', {}, { force }); UI.dataTable(tableMount, [
       { key: 'id_mutasi', label: 'ID', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'asal', label: 'Asal', render: row => ref.ruangan.find(x => x.id_ruangan === row.asal)?.nama_ruangan || row.asal },
       { key: 'tujuan', label: 'Tujuan', render: row => ref.ruangan.find(x => x.id_ruangan === row.tujuan)?.nama_ruangan || row.tujuan }, { key: 'tanggal', label: 'Tanggal', type: 'tanggal' }, { key: 'status', label: 'Status', type: 'badge' }
     ], r.success ? r.data : []); }
     function openForm() {
       const fields = [{ key: 'id_aset', label: 'Aset', type: 'select', options: asetOpts, required: true }, { key: 'tujuan', label: 'Ruangan Tujuan', type: 'select', options: ruanganOpts, required: true }, { key: 'tanggal', label: 'Tanggal', type: 'date', required: true }];
       const form = UI.buildForm(fields, { tanggal: new Date().toISOString().slice(0, 10) });
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('mutasiAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Ajukan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('mutasiAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Ajukan']);
       UI.openModal('Ajukan Mutasi Aset', form.node, footBtn);
     }
     load();
   }
 
   async function renderPenghapusan(mount) {
-    const asetRes = await api('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
+    const asetRes = await apiList('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
     const toolbar = can('penghapusan', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Usulkan Penghapusan']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() { const r = await api('penghapusanList', {}); UI.dataTable(tableMount, [
+    async function load(force) { const r = await apiList('penghapusanList', {}, { force }); UI.dataTable(tableMount, [
       { key: 'id_hapus', label: 'ID', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'metode', label: 'Metode' }, { key: 'alasan', label: 'Alasan' }, { key: 'status', label: 'Status', type: 'badge' }
     ], r.success ? r.data : []); }
     function openForm() {
       const fields = [{ key: 'id_aset', label: 'Aset', type: 'select', options: asetOpts, required: true }, { key: 'metode', label: 'Metode', type: 'select', options: [{ value: 'jual', label: 'Jual' }, { value: 'hibah', label: 'Hibah' }, { value: 'musnah', label: 'Musnah' }], required: true }, { key: 'no_sk', label: 'Nomor SK' }, { key: 'alasan', label: 'Alasan', type: 'textarea', span2: true, required: true }];
       const form = UI.buildForm(fields, {});
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('penghapusanAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Usulkan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('penghapusanAjukan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Usulkan']);
       UI.openModal('Usulkan Penghapusan Aset', form.node, footBtn);
     }
     load();
@@ -510,8 +515,9 @@
   async function renderPersetujuan(mount) {
     mount.appendChild(el('div', { class: 'desc' }, ['Semua pengajuan menunggu keputusan Anda sebagai Kepala Sekolah.']));
     const tableMount = section(mount);
-    async function load() {
-      const r = await api('antreanPersetujuan', {});
+    async function load(force) {
+      // Antrean persetujuan bisa berubah dari aksi admin lain — jendela segar lebih pendek (10dtk).
+      const r = await apiList('antreanPersetujuan', {}, { force, fresh: 10000 });
       const rows = r.success ? r.data : [];
       UI.dataTable(tableMount, [
         { key: 'tipe', label: 'Tipe', type: 'badge' }, { key: 'id_aset', label: 'Aset/Barang', render: row => row.id_aset || row.id_permintaan || '-' },
@@ -530,7 +536,7 @@
       const catatan = keputusan === 'Ditolak' ? (window.prompt('Catatan penolakan (opsional):') || '') : '';
       const r = await api('setujuiPengajuan', { tipe: row.tipe, id: idOf(row), keputusan, catatan });
       UI.toast(r.message, r.success ? 'success' : 'error');
-      if (r.success) load();
+      if (r.success) load(true);
     }
     load();
   }
@@ -550,31 +556,31 @@
     }
   }
   async function renderKerusakan(mount) {
-    const asetRes = await api('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
+    const asetRes = await apiList('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
     const toolbar = can('kerusakan', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Lapor Kerusakan']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() { const r = await api('kerusakanList', {}); UI.dataTable(tableMount, [
+    async function load(force) { const r = await apiList('kerusakanList', {}, { force }); UI.dataTable(tableMount, [
       { key: 'id_tiket', label: 'Tiket', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'deskripsi', label: 'Deskripsi' }, { key: 'tanggal_lapor', label: 'Dilaporkan', type: 'tanggal' }, { key: 'status', label: 'Status', type: 'badge' }
     ], r.success ? r.data : [], { actions: (row) => can('kerusakan', 'U') ? el('select', {
-      onchange: async (e) => { const res = await api('kerusakanUpdateStatus', { id_tiket: row.id_tiket, status: e.target.value }); UI.toast(res.message, res.success ? 'success' : 'error'); if (res.success) load(); }
+      onchange: async (e) => { const res = await api('kerusakanUpdateStatus', { id_tiket: row.id_tiket, status: e.target.value }); UI.toast(res.message, res.success ? 'success' : 'error'); if (res.success) load(true); }
     }, ['Baru', 'Ditangani', 'Selesai'].map(s => el('option', { value: s, selected: s === row.status ? 'selected' : null }, [s]))) : null }); }
     function openForm() {
       const fields = [{ key: 'id_aset', label: 'Aset', type: 'select', options: asetOpts, required: true }, { key: 'deskripsi', label: 'Deskripsi Kerusakan', type: 'textarea', required: true, span2: true }];
       const form = UI.buildForm(fields, {});
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('kerusakanLapor', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Lapor']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('kerusakanLapor', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Lapor']);
       UI.openModal('Lapor Kerusakan', form.node, footBtn);
     }
     load();
   }
   async function renderServis(mount) {
-    const asetRes = await api('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
-    const vendorRes = await api('vendorList', {}); const vendorOpts = (vendorRes.success ? vendorRes.data : []).map(v => ({ value: v.id_vendor, label: v.nama }));
+    const asetRes = await apiList('asetList', {}); const asetOpts = (asetRes.success ? asetRes.data : []).map(a => ({ value: a.id_aset, label: a.id_aset + ' — ' + a.nama }));
+    const vendorRes = await apiList('vendorList', {}); const vendorOpts = (vendorRes.success ? vendorRes.data : []).map(v => ({ value: v.id_vendor, label: v.nama }));
     const toolbar = can('pemeliharaan', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Jadwalkan Servis']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() {
-      const r = await api('pemeliharaanList', {});
+    async function load(force) {
+      const r = await apiList('pemeliharaanList', {}, { force });
       UI.dataTable(tableMount, [
         { key: 'id_pemeliharaan', label: 'ID', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'jenis', label: 'Jenis' },
         { key: 'tanggal_servis', label: 'Tgl Servis', type: 'tanggal' }, { key: 'jadwal_berikutnya', label: 'Jadwal Berikutnya', type: 'tanggal' },
@@ -586,7 +592,7 @@
         { key: 'tanggal_servis', label: 'Tanggal Servis', type: 'date', required: true }, { key: 'jadwal_berikutnya', label: 'Jadwal Berikutnya', type: 'date' },
         { key: 'biaya', label: 'Biaya (Rp)', type: 'number' }, { key: 'id_vendor', label: 'Vendor', type: 'select', options: vendorOpts }];
       const form = UI.buildForm(fields, { tanggal_servis: new Date().toISOString().slice(0, 10) });
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('pemeliharaanJadwalkan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('pemeliharaanJadwalkan', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Simpan']);
       UI.openModal('Jadwalkan Pemeliharaan', form.node, footBtn);
     }
     load();
@@ -610,19 +616,19 @@
     const toolbar = can('dokumen_keuangan', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Catat Dokumen']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() { const r = await api('dokKeuanganList', {}); UI.dataTable(tableMount, [
+    async function load(force) { const r = await apiList('dokKeuanganList', {}, { force }); UI.dataTable(tableMount, [
       { key: 'jenis', label: 'Jenis' }, { key: 'nomor', label: 'Nomor', type: 'code' }, { key: 'tanggal', label: 'Tanggal', type: 'tanggal' },
       { key: 'nominal', label: 'Nominal', type: 'rupiah' }, { key: 'status_verifikasi', label: 'Status', type: 'badge' }
     ], r.success ? r.data : [], { actions: (row) => (can('dokumen_keuangan', 'U') && (row.status_verifikasi === 'Belum' || !row.status_verifikasi)) ? el('div', { class: 'flex gap-8' }, [
       el('button', { class: 'btn btn-secondary btn-sm', onclick: () => verif(row, 'Sesuai') }, ['Sesuai']),
       el('button', { class: 'btn btn-destructive btn-sm', onclick: () => verif(row, 'Tidak Sesuai') }, ['Tidak Sesuai'])
     ]) : null }); }
-    async function verif(row, status) { const r = await api('dokKeuanganVerifikasi', { id_dok: row.id_dok, status_verifikasi: status }); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) load(); }
+    async function verif(row, status) { const r = await api('dokKeuanganVerifikasi', { id_dok: row.id_dok, status_verifikasi: status }); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) load(true); }
     function openForm() {
       const fields = [{ key: 'jenis', label: 'Jenis', type: 'select', options: [{ value: 'Kuitansi', label: 'Kuitansi' }, { value: 'SP2D', label: 'SP2D' }, { value: 'SPM', label: 'SPM' }], required: true },
         { key: 'nomor', label: 'Nomor Dokumen', required: true }, { key: 'tanggal', label: 'Tanggal', type: 'date', required: true }, { key: 'nominal', label: 'Nominal (Rp)', type: 'number', required: true }];
       const form = UI.buildForm(fields, { tanggal: new Date().toISOString().slice(0, 10) });
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('dokKeuanganSave', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('dokKeuanganSave', form.getValues()); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Simpan']);
       UI.openModal('Catat Dokumen Keuangan', form.node, footBtn);
     }
     load();
@@ -631,22 +637,22 @@
     const toolbar = can('rekonsiliasi', 'C') ? el('button', { class: 'btn btn-primary', onclick: openForm }, ['+ Rekonsiliasi Baru']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() { const r = await api('rekonsiliasiList', {}); UI.dataTable(tableMount, [
+    async function load(force) { const r = await apiList('rekonsiliasiList', {}, { force }); UI.dataTable(tableMount, [
       { key: 'periode', label: 'Periode' }, { key: 'total_nilai_fisik', label: 'Nilai Fisik (Aplikasi)', type: 'rupiah' },
       { key: 'total_nilai_neraca', label: 'Nilai Neraca', type: 'rupiah' }, { key: 'selisih', label: 'Selisih', type: 'rupiah' }, { key: 'catatan', label: 'Catatan' }
     ], r.success ? r.data : []); }
     function openForm() {
       const fields = [{ key: 'periode', label: 'Periode (mis. 2026-Q3)', required: true }, { key: 'total_nilai_neraca', label: 'Total Nilai Neraca (Rp)', type: 'number', required: true }, { key: 'catatan', label: 'Catatan', type: 'textarea', span2: true }];
       const form = UI.buildForm(fields, {});
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('rekonsiliasiSimpan', form.getValues()); UI.toast(r.success ? ('Tersimpan. Selisih: ' + UI.rupiah(r.data.selisih)) : r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Hitung & Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const r = await api('rekonsiliasiSimpan', form.getValues()); UI.toast(r.success ? ('Tersimpan. Selisih: ' + UI.rupiah(r.data.selisih)) : r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Hitung & Simpan']);
       UI.openModal('Rekonsiliasi Aset & Keuangan', form.node, footBtn);
     }
     load();
   }
   async function renderKapitalisasi(mount) {
     const tableMount = section(mount);
-    async function load() {
-      const r = await api('pemeliharaanList', {});
+    async function load(force) {
+      const r = await apiList('pemeliharaanList', {}, { force });
       const rows = (r.success ? r.data : []).filter(p => p.status_kapitalisasi === 'Belum Diputuskan');
       UI.dataTable(tableMount, [
         { key: 'id_pemeliharaan', label: 'ID', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'jenis', label: 'Jenis' }, { key: 'biaya', label: 'Biaya', type: 'rupiah' }
@@ -655,7 +661,7 @@
         el('button', { class: 'btn btn-destructive btn-sm', onclick: () => putuskan(row, false) }, ['Beban Saja'])
       ]) : null });
     }
-    async function putuskan(row, dikapitalisasi) { const r = await api('kapitalisasiSetujui', { id_pemeliharaan: row.id_pemeliharaan, dikapitalisasi }); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) load(); }
+    async function putuskan(row, dikapitalisasi) { const r = await api('kapitalisasiSetujui', { id_pemeliharaan: row.id_pemeliharaan, dikapitalisasi }); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) load(true); }
     load();
   }
 
@@ -771,26 +777,26 @@
     const toolbar = can('pengguna', 'C') ? el('button', { class: 'btn btn-primary', onclick: () => openForm(null) }, ['+ Tambah Pengguna']) : null;
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [toolbar]));
     const tableMount = section(mount);
-    async function load() { const r = await api('usersList', {}); UI.dataTable(tableMount, [
+    async function load(force) { const r = await apiList('usersList', {}, { force }); UI.dataTable(tableMount, [
       { key: 'nama', label: 'Nama' }, { key: 'email', label: 'Email' }, { key: 'role', label: 'Peran' }, { key: 'status_aktif', label: 'Status', type: 'badge' }
     ], r.success ? r.data : [], { actions: (row) => el('div', { class: 'flex gap-8' }, [
       can('pengguna', 'U') ? el('button', { class: 'btn btn-secondary btn-sm', onclick: () => openForm(row) }, ['Ubah']) : null,
       can('pengguna', 'D') ? el('button', { class: 'btn btn-destructive btn-sm', onclick: () => toggle(row) }, [row.status_aktif === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan']) : null
     ]) }); }
-    async function toggle(row) { if (!UI.confirmDialog('Ubah status pengguna ini?')) return; const r = await api('usersToggle', { id_user: row.id_user }); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) load(); }
+    async function toggle(row) { if (!UI.confirmDialog('Ubah status pengguna ini?')) return; const r = await api('usersToggle', { id_user: row.id_user }); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) load(true); }
     function openForm(row) {
       const isNew = !row;
       const fields = [{ key: 'nama', label: 'Nama', required: true }, { key: 'email', label: 'Email Google', required: true },
         { key: 'role', label: 'Peran', type: 'select', options: [{ value: 'SUPER_ADMIN', label: 'Super Admin' }, { value: 'STAF_INVENTARIS', label: 'Staf Inventaris' }, { value: 'BENDAHARA', label: 'Bendahara' }, { value: 'KEPALA_SEKOLAH', label: 'Kepala Sekolah' }], required: true }];
       const form = UI.buildForm(fields, row || {});
-      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); if (!isNew) v.id_user = row.id_user; const r = await api('usersSave', v); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(); } } }, ['Simpan']);
+      const footBtn = el('button', { class: 'btn btn-primary', onclick: async () => { const v = form.getValues(); if (!isNew) v.id_user = row.id_user; const r = await api('usersSave', v); UI.toast(r.message, r.success ? 'success' : 'error'); if (r.success) { UI.closeModal(); load(true); } } }, ['Simpan']);
       UI.openModal((isNew ? 'Tambah' : 'Ubah') + ' Pengguna', form.node, footBtn);
     }
     load();
   }
   async function renderLog(mount) {
     const tableMount = section(mount);
-    const r = await api('logList', {});
+    const r = await apiList('logList', {}, { fresh: 15000 });
     UI.dataTable(tableMount, [
       { key: 'timestamp', label: 'Waktu', render: row => UI.tglJam(row.timestamp) }, { key: 'email', label: 'Pengguna' }, { key: 'aksi', label: 'Aksi' }, { key: 'modul', label: 'Modul' }, { key: 'id_data', label: 'Data', type: 'code' }, { key: 'keterangan', label: 'Keterangan' }
     ], r.success ? r.data : []);
@@ -798,8 +804,19 @@
 
   async function renderPengaturan(mount) {
     if (!guardModul(mount, 'pengaturan')) return;
-    pageHead(mount, 'Pengaturan Sistem', 'Profil instansi untuk kop laporan & backup data');
-    const res = await api('pengaturanGet', {});
+    let tab = 'profil';
+    pageHead(mount, 'Pengaturan Sistem', 'Profil instansi, backup data, dan template dokumen cetak');
+    const tabsMount = section(mount), bodyMount = section(mount);
+    draw();
+    function draw() {
+      tabsMount.innerHTML = ''; tabsBar(tabsMount, [{ id: 'profil', label: 'Profil Instansi' }, { id: 'template', label: 'Template Dokumen' }], tab, (id) => { tab = id; draw(); });
+      bodyMount.innerHTML = '';
+      if (tab === 'profil') renderPengaturanProfil(bodyMount); else renderTemplateDokumen(bodyMount);
+    }
+  }
+
+  async function renderPengaturanProfil(mount) {
+    const res = await apiList('pengaturanGet', {});
     const p = res.success ? res.data : {};
     const fields = [{ key: 'nama_instansi', label: 'Nama Instansi', required: true, span2: true }, { key: 'alamat', label: 'Alamat', span2: true },
       { key: 'kepala_sekolah', label: 'Nama Kepala Sekolah' }, { key: 'tahun_ajaran', label: 'Tahun Ajaran' }];
@@ -812,6 +829,55 @@
       el('button', { class: 'btn btn-secondary mt-8', onclick: async (e) => { e.target.disabled = true; const r = await api('backupJalankan', {}); UI.toast(r.message, r.success ? 'success' : 'error'); e.target.disabled = false; } }, ['Jalankan Backup Sekarang'])
     ]);
     mount.appendChild(backupCard);
+  }
+
+  // ------------------------------------------------------------------
+  // TEMPLATE DOKUMEN CETAK (PANDUAN-INSTALASI.md Bagian A7) — khusus Super Admin, karena
+  // halaman Pengaturan Sistem sendiri sudah dibatasi modul 'pengaturan' (hanya Super Admin
+  // punya akses R/U/C/D pada modul ini, lihat PERMS di Config.gs).
+  // ------------------------------------------------------------------
+  async function renderTemplateDokumen(mount) {
+    mount.appendChild(el('div', { class: 'desc mt-8' }, [
+      'Atur file Google Docs yang dipakai saat mencetak PDF (KIB, KIR, Buku Inventaris, Mutasi, Penyusutan, Berita Acara, Label QR). ' +
+      'Tempel File ID atau link Google Docs yang sudah Anda buat, atau biarkan aplikasi membuatkan template awal otomatis.'
+    ]));
+    const tableMount = section(mount);
+    async function load(force) {
+      const r = await apiList('templateDokumenList', {}, { force, fresh: 30000 });
+      const rows = r.success ? r.data : [];
+      tableMount.innerHTML = '';
+      UI.dataTable(tableMount, [
+        { key: 'label', label: 'Jenis Dokumen' },
+        { key: 'fileName', label: 'Template Saat Ini', render: row => row.fileUrl ? el('a', { href: row.fileUrl, target: '_blank' }, [row.fileName]) : el('span', { class: 'muted' }, ['— belum diatur —']) },
+        { key: 'status', label: 'Status', type: 'badge' }
+      ], rows, {
+        actions: (row) => el('div', { class: 'flex gap-8' }, [
+          el('button', { class: 'btn btn-secondary btn-sm', onclick: () => openForm(row) }, ['Atur']),
+          !row.fileId ? el('button', { class: 'btn btn-secondary btn-sm', onclick: () => buatBaru(row) }, ['+ Buat Baru']) : null
+        ])
+      });
+    }
+    function openForm(row) {
+      const fields = [{ key: 'fileIdOrUrl', label: 'File ID atau Link Google Docs (kosongkan untuk menghapus pengaturan)', span2: true }];
+      const form = UI.buildForm(fields, { fileIdOrUrl: row.fileId || '' });
+      form.node.appendChild(el('div', { class: 'hint mt-8' }, ['Placeholder yang tersedia untuk ' + row.label + ': ' + row.placeholders.join(', ')]));
+      const footBtn = el('button', {
+        class: 'btn btn-primary', onclick: async () => {
+          const v = form.getValues();
+          const r = await api('templateDokumenSave', { jenis: row.jenis, fileIdOrUrl: v.fileIdOrUrl });
+          UI.toast(r.message, r.success ? 'success' : 'error');
+          if (r.success) { UI.closeModal(); load(true); }
+        }
+      }, ['Simpan']);
+      UI.openModal('Atur Template — ' + row.label, form.node, footBtn);
+    }
+    async function buatBaru(row) {
+      if (!UI.confirmDialog('Buat template baru otomatis untuk "' + row.label + '"? Dokumen baru berisi daftar placeholder siap pakai akan dibuat di folder Cetak — Anda bisa langsung mendesain ulang tata letak dan kopnya di Google Docs.')) return;
+      const r = await api('templateDokumenBuatBaru', { jenis: row.jenis });
+      UI.toast(r.message, r.success ? 'success' : 'error');
+      if (r.success) { load(true); if (r.data && r.data.fileUrl) window.open(r.data.fileUrl, '_blank'); }
+    }
+    load();
   }
 
   // ------------------------------------------------------------------
