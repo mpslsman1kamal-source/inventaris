@@ -51,7 +51,7 @@
       google.accounts.id.initialize({
         client_id: APP_CONFIG.GOOGLE_CLIENT_ID,
         callback: onGoogleCredential,
-        auto_select: true
+        auto_select: false
       });
       const container = document.getElementById('gsi-button-container');
       google.accounts.id.renderButton(container, { theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'rectangular', width: 280 });
@@ -102,12 +102,27 @@
   App.onSessionExpired = onSessionExpired;
 
   function logout() {
+    const email = App.state.user && App.state.user.email;
     API.api('logout', {});
     API.setToken('');
     API.Store.clearAll();
+    // Hapus status "akun diingat" Google Identity Services (penyebab chip email lama masih
+    // tampil di layar login setelah logout) — disableAutoSelect() mencegah one-tap otomatis,
+    // revoke() melepas izin akun ini dari aplikasi di sisi Google agar tombol login kembali
+    // bersih seperti kunjungan pertama. Keduanya aman dipanggil meski GSI belum siap.
+    try {
+      if (window.google && google.accounts && google.accounts.id) {
+        google.accounts.id.disableAutoSelect();
+        if (email) google.accounts.id.revoke(email, () => {});
+      }
+    } catch (e) { console.error('[Inventaris] Gagal membersihkan sesi Google Identity Services', e); }
     location.hash = '';
     document.getElementById('app-shell').classList.remove('show');
     document.getElementById('login-screen').style.display = 'flex';
+    // Bangun ulang tombol login agar tidak menampilkan chip akun lama dari render sebelumnya.
+    const container = document.getElementById('gsi-button-container');
+    if (container) container.innerHTML = '';
+    initLogin();
   }
 
   // ---------------- SHELL / NAV ----------------

@@ -51,10 +51,11 @@
       pageHead(mount, opts.title, opts.desc || '', toolbar);
       const tableMount = section(mount);
       let rows = [];
-      async function load() {
-        const res = await api(opts.listAction, {});
-        rows = res.success ? res.data : [];
-        draw();
+      // Pola stale-while-revalidate (API.swr, sudah ada di api.js): render instan dari cache
+      // lokal pada kunjungan berikutnya, lalu segarkan di latar — mengurangi jeda saat pindah
+      // menu, tanpa mengubah struktur/alur halaman.
+      async function load(force) {
+        return API.swr('list:' + opts.listAction, opts.listAction, {}, (data) => { rows = data || []; draw(); }, { force: !!force, fresh: 30000 });
       }
       function draw() {
         tableMount.innerHTML = '';
@@ -69,7 +70,7 @@
         if (!UI.confirmDialog('Ubah status data ini?')) return;
         const res = await api(opts.toggleAction, { [opts.idKey]: row[opts.idKey] });
         UI.toast(res.message, res.success ? 'success' : 'error');
-        if (res.success) load();
+        if (res.success) load(true);
       }
       function openForm(row) {
         const isNew = !row;
@@ -81,7 +82,7 @@
             vals.isNew = isNew;
             const res = await api(opts.saveAction, vals);
             UI.toast(res.message, res.success ? 'success' : 'error');
-            if (res.success) { UI.closeModal(); load(); }
+            if (res.success) { UI.closeModal(); load(true); }
           }
         }, ['Simpan']);
         UI.openModal((isNew ? 'Tambah ' : 'Ubah ') + opts.title, form.node, footBtn);
@@ -96,10 +97,23 @@
   async function renderDashboard(mount) {
     pageHead(mount, 'Dashboard', 'Ringkasan kondisi inventaris — ' + (App.state.pengaturan.tahun_ajaran || ''));
     const body = section(mount);
+    // Data dashboard sudah ikut dikirim backend saat login (bootstrapData_ di Modules_Dashboard.gs).
+    // Pakai itu untuk tampilan instan (hindari jeda round-trip tambahan setelah login), lalu
+    // segarkan di latar belakang agar tetap akurat bila data berubah di sheet.
+    let d = App.state.lastDashboard;
+    if (d) {
+      drawDashboard(body, d);
+      api('dashboard', {}).then(res => { if (res.success) { App.state.lastDashboard = res.data; drawDashboard(body, res.data); } });
+      return;
+    }
     body.innerHTML = '<div class="kpi-grid">' + Array(4).fill('<div class="card"><div class="skeleton" style="width:60%"></div><div class="skeleton mt-16" style="width:40%;height:24px"></div></div>').join('') + '</div>';
     const res = await api('dashboard', {});
     if (!res.success) { body.innerHTML = ''; body.appendChild(el('div', { class: 'card' }, [res.message])); return; }
-    const d = res.data;
+    App.state.lastDashboard = res.data;
+    drawDashboard(body, res.data);
+  }
+
+  function drawDashboard(body, d) {
     body.innerHTML = '';
     const kpi = el('div', { class: 'kpi-grid' }, [
       el('div', { class: 'kpi', style: '--accent-strip:var(--accent)' }, [el('div', { class: 'lbl' }, ['Total Nilai Aset']), el('div', { class: 'val' }, [UI.rupiah(d.totalNilaiAset)]), el('div', { class: 'sub' }, [d.jumlahAset + ' unit aset aktif'])]),
