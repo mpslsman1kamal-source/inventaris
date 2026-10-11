@@ -51,37 +51,46 @@
   // opts: { judul, infoLines:[string], columns, rows, onCetak: async () => void }
   // ------------------------------------------------------------------
   function previewCetak(opts) {
-    const p = App.state.pengaturan || {};
-    const wrap = el('div', {});
-    wrap.appendChild(el('div', { class: 'card', style: 'text-align:center;margin-bottom:12px' }, [
-      el('div', { style: 'font-weight:700' }, [p.nama_instansi || 'SMAN 1 Kamal Bangkalan']),
-      p.alamat ? el('div', { class: 'muted', style: 'font-size:12px' }, [p.alamat]) : null,
-      el('div', { class: 'muted', style: 'font-size:12px' }, ['Kepala Sekolah: ' + (p.kepala_sekolah || '-') + ' · Tahun Ajaran: ' + (p.tahun_ajaran || '-')])
-    ]));
-    wrap.appendChild(el('h3', { style: 'margin:0 0 4px' }, [opts.judul]));
-    if (opts.infoLines && opts.infoLines.length) {
-      wrap.appendChild(el('div', { class: 'desc mb-8' }, [opts.infoLines.join(' · ')]));
-    }
-    if (opts.extraNode) wrap.appendChild(opts.extraNode);
-    if (opts.rows) {
-      if (!opts.rows.length) {
-        wrap.appendChild(el('div', { class: 'card mt-8' }, ['Tidak ada data untuk dicetak dengan filter saat ini.']));
-      } else {
-        const tableHolder = el('div', { style: 'max-height:360px;overflow:auto;border:1px solid var(--border,#e2e2e2);border-radius:8px' });
-        wrap.appendChild(tableHolder);
-        UI.dataTable(tableHolder, opts.columns, opts.rows);
+    // Dibungkus try/catch: opts.rows/columns/extraNode berasal dari banyak pemanggil (7 jenis
+    // cetak, semua role). Bila salah satu pemanggil melempar error tak terduga (mis. data
+    // referensi belum siap), tombol "Cetak PDF" sebelumnya terlihat tidak bereaksi sama sekali
+    // (error hanya tercatat diam-diam di console) — sekarang selalu ada notifikasi terlihat,
+    // apa pun role yang memakainya.
+    try {
+      const p = App.state.pengaturan || {};
+      const wrap = el('div', {});
+      wrap.appendChild(el('div', { class: 'card', style: 'text-align:center;margin-bottom:12px' }, [
+        el('div', { style: 'font-weight:700' }, [p.nama_instansi || 'SMAN 1 Kamal Bangkalan']),
+        p.alamat ? el('div', { class: 'muted', style: 'font-size:12px' }, [p.alamat]) : null,
+        el('div', { class: 'muted', style: 'font-size:12px' }, ['Kepala Sekolah: ' + (p.kepala_sekolah || '-') + ' · Tahun Ajaran: ' + (p.tahun_ajaran || '-')])
+      ]));
+      wrap.appendChild(el('h3', { style: 'margin:0 0 4px' }, [opts.judul]));
+      if (opts.infoLines && opts.infoLines.length) {
+        wrap.appendChild(el('div', { class: 'desc mb-8' }, [opts.infoLines.join(' · ')]));
       }
-    }
-    const footBtn = el('div', { class: 'flex gap-8' }, [
-      el('button', { class: 'btn btn-secondary', onclick: UI.closeModal }, ['Batal']),
-      el('button', {
-        class: 'btn btn-primary', onclick: async (e) => {
-          e.target.disabled = true; e.target.textContent = 'Membuat PDF...';
-          try { await opts.onCetak(); } finally { UI.closeModal(); }
+      if (opts.extraNode) wrap.appendChild(opts.extraNode);
+      if (opts.rows) {
+        if (!opts.rows.length) {
+          wrap.appendChild(el('div', { class: 'card mt-8' }, ['Tidak ada data untuk dicetak dengan filter saat ini.']));
+        } else {
+          const tableHolder = el('div', { style: 'max-height:360px;overflow:auto;border:1px solid var(--border,#e2e2e2);border-radius:8px' });
+          wrap.appendChild(tableHolder);
+          UI.dataTable(tableHolder, opts.columns, opts.rows);
         }
-      }, ['Cetak PDF Sekarang'])
-    ]);
-    UI.openModal('Pratinjau Cetak — ' + opts.judul, wrap, footBtn);
+      }
+      const footBtn = el('div', { class: 'flex gap-8' }, [
+        el('button', { class: 'btn btn-secondary', onclick: UI.closeModal }, ['Batal']),
+        el('button', {
+          class: 'btn btn-primary', onclick: async (e) => {
+            e.target.disabled = true; e.target.textContent = 'Membuat PDF...';
+            try { await opts.onCetak(); } catch (err) { UI.toast('Gagal membuat PDF: ' + (err && err.message ? err.message : err), 'error'); } finally { UI.closeModal(); }
+          }
+        }, ['Cetak PDF Sekarang'])
+      ]);
+      UI.openModal('Pratinjau Cetak — ' + opts.judul, wrap, footBtn);
+    } catch (err) {
+      UI.toast('Gagal membuka pratinjau cetak: ' + (err && err.message ? err.message : err), 'error');
+    }
   }
 
   // ------------------------------------------------------------------
