@@ -77,29 +77,26 @@ Di editor Apps Script: ikon gerigi **Project Settings** → scroll ke **Script P
 
 Modul cetak (KIB, KIR, Buku Inventaris, Mutasi, Penyusutan, Berita Acara, Label QR) butuh **template Google Docs** berisi placeholder teks `{{SEPERTI_INI}}`, yang akan diisi otomatis lalu diekspor jadi PDF.
 
-Untuk tiap jenis, buat 1 Google Docs baru (boleh gunakan kop surat sekolah, logo, dsb — desain bebas, placeholder yang penting):
+**Sejak versi ini, template diatur lewat aplikasi sendiri** — login sebagai Super Admin → menu **Pengaturan Sistem → tab "Template Dokumen"**. Di sana, untuk tiap jenis dokumen Anda bisa:
 
-| Jenis (`TEMPLATE_MAP` key) | Placeholder yang tersedia |
+- Klik **"+ Buat Baru"** supaya aplikasi otomatis membuatkan Google Docs baru (di folder Cetak) berisi daftar placeholder `{{...}}` yang sudah benar — tinggal buka linknya dan desain ulang tata letak/kop surat/logo sesuka Anda, asal teks placeholder-nya tidak dihapus (boleh dipindah ke mana saja, termasuk ke dalam sel tabel).
+- Atau klik **"Atur"** lalu tempel **File ID atau link lengkap** Google Docs yang sudah Anda buat/desain sendiri.
+
+Daftar placeholder per jenis dokumen (juga ditampilkan di halaman "Atur" masing-masing):
+
+| Jenis | Placeholder yang tersedia |
 |---|---|
-| `kib` | `{{NAMA_INSTANSI}}` `{{ALAMAT_INSTANSI}}` `{{KEPALA_SEKOLAH}}` `{{TAHUN_AJARAN}}` `{{TANGGAL_CETAK}}` `{{JENIS_KIB}}` `{{JUMLAH_ITEM}}` `{{TOTAL_NILAI}}` `{{DAFTAR}}` |
-| `kir` | kop (sama seperti di atas) + `{{NAMA_RUANGAN}}` `{{PENANGGUNG_JAWAB}}` `{{JUMLAH_ITEM}}` `{{DAFTAR}}` |
-| `buku_inventaris` | kop + `{{JUMLAH_ITEM}}` `{{DAFTAR}}` |
-| `mutasi` | kop + `{{PERIODE}}` `{{JUMLAH_ITEM}}` `{{DAFTAR}}` |
-| `penyusutan` | kop + `{{JUMLAH_ITEM}}` `{{TOTAL_NILAI_BUKU}}` `{{DAFTAR}}` |
-| `berita_acara` | kop + `{{NOMOR_BA}}` `{{JENIS_BA}}` `{{TANGGAL}}` `{{PIHAK_1}}` `{{PIHAK_2}}` `{{RINGKASAN}}` |
-| `label_qr` | `{{KODE_ASET}}` `{{NAMA_ASET}}` `{{KODE_QR}}` `{{NAMA_INSTANSI}}` dan **`{{QR_IMAGE}}`** (taruh di sel/baris kosong — akan diganti gambar QR code) |
+| KIB | `{{NAMA_INSTANSI}}` `{{ALAMAT_INSTANSI}}` `{{KEPALA_SEKOLAH}}` `{{TAHUN_AJARAN}}` `{{TANGGAL_CETAK}}` `{{JENIS_KIB}}` `{{JUMLAH_ITEM}}` `{{TOTAL_NILAI}}` `{{DAFTAR}}` |
+| KIR | kop (sama seperti di atas) + `{{NAMA_RUANGAN}}` `{{PENANGGUNG_JAWAB}}` `{{JUMLAH_ITEM}}` `{{DAFTAR}}` |
+| Buku Inventaris | kop + `{{JUMLAH_ITEM}}` `{{DAFTAR}}` |
+| Laporan Mutasi | kop + `{{PERIODE}}` `{{JUMLAH_ITEM}}` `{{DAFTAR}}` |
+| Laporan Penyusutan | kop + `{{JUMLAH_ITEM}}` `{{TOTAL_NILAI_BUKU}}` `{{DAFTAR}}` |
+| Berita Acara | kop + `{{NOMOR_BA}}` `{{JENIS_BA}}` `{{TANGGAL}}` `{{PIHAK_1}}` `{{PIHAK_2}}` `{{RINGKASAN}}` |
+| Label QR Aset | `{{KODE_ASET}}` `{{NAMA_ASET}}` `{{KODE_QR}}` `{{NAMA_INSTANSI}}` dan **`{{QR_IMAGE}}`** (taruh di sel/baris kosong — akan diganti gambar QR code) |
 
 > `{{DAFTAR}}` adalah daftar baris data (tabel) yang digabung jadi satu blok teks bertab — taruh placeholder ini **di dalam satu sel tabel** pada template Docs Anda supaya rapi saat dicetak.
 
-Setelah tiap template jadi, buka Docs-nya → salin **File ID** dari URL (`https://docs.google.com/document/d/`**`FILE_ID_DI_SINI`**`/edit`).
-
-Lalu di Apps Script, tambahkan Script Property:
-
-| Property | Nilai |
-|---|---|
-| `TEMPLATE_MAP` | `{"kib":"FILE_ID_KIB","kir":"FILE_ID_KIR","buku_inventaris":"FILE_ID_BI","mutasi":"FILE_ID_MUTASI","penyusutan":"FILE_ID_PENYUSUTAN","berita_acara":"FILE_ID_BA","label_qr":"FILE_ID_LABEL"}` |
-
-(Satu baris JSON valid, ganti tiap `FILE_ID_...` dengan ID asli. Kalau sebuah jenis dokumen belum ada templatenya, hapus saja entrinya dari JSON — fitur cetak jenis itu akan menampilkan pesan "template belum diatur" sampai diisi.)
+Cara lama (mengisi Script Property `TEMPLATE_MAP` manual di editor Apps Script) masih tetap berfungsi sebagai cadangan — keduanya membaca/menulis properti yang sama, jadi template yang pernah Anda atur manual akan langsung terlihat di menu "Template Dokumen" ini.
 
 ### A8. Tambah pengguna lain
 

@@ -46,6 +46,45 @@
   function section(mount) { const s = el('div', {}); mount.appendChild(s); return s; }
 
   // ------------------------------------------------------------------
+  // Pratinjau sebelum cetak PDF — ditampilkan lewat modal sebelum dokumen benar-benar
+  // dibuat/diunduh, supaya isi (kop, filter yang aktif, dan daftar datanya) bisa dicek dulu.
+  // opts: { judul, infoLines:[string], columns, rows, onCetak: async () => void }
+  // ------------------------------------------------------------------
+  function previewCetak(opts) {
+    const p = App.state.pengaturan || {};
+    const wrap = el('div', {});
+    wrap.appendChild(el('div', { class: 'card', style: 'text-align:center;margin-bottom:12px' }, [
+      el('div', { style: 'font-weight:700' }, [p.nama_instansi || 'SMAN 1 Kamal Bangkalan']),
+      p.alamat ? el('div', { class: 'muted', style: 'font-size:12px' }, [p.alamat]) : null,
+      el('div', { class: 'muted', style: 'font-size:12px' }, ['Kepala Sekolah: ' + (p.kepala_sekolah || '-') + ' · Tahun Ajaran: ' + (p.tahun_ajaran || '-')])
+    ]));
+    wrap.appendChild(el('h3', { style: 'margin:0 0 4px' }, [opts.judul]));
+    if (opts.infoLines && opts.infoLines.length) {
+      wrap.appendChild(el('div', { class: 'desc mb-8' }, [opts.infoLines.join(' · ')]));
+    }
+    if (opts.extraNode) wrap.appendChild(opts.extraNode);
+    if (opts.rows) {
+      if (!opts.rows.length) {
+        wrap.appendChild(el('div', { class: 'card mt-8' }, ['Tidak ada data untuk dicetak dengan filter saat ini.']));
+      } else {
+        const tableHolder = el('div', { style: 'max-height:360px;overflow:auto;border:1px solid var(--border,#e2e2e2);border-radius:8px' });
+        wrap.appendChild(tableHolder);
+        UI.dataTable(tableHolder, opts.columns, opts.rows);
+      }
+    }
+    const footBtn = el('div', { class: 'flex gap-8' }, [
+      el('button', { class: 'btn btn-secondary', onclick: UI.closeModal }, ['Batal']),
+      el('button', {
+        class: 'btn btn-primary', onclick: async (e) => {
+          e.target.disabled = true; e.target.textContent = 'Membuat PDF...';
+          try { await opts.onCetak(); } finally { UI.closeModal(); }
+        }
+      }, ['Cetak PDF Sekarang'])
+    ]);
+    UI.openModal('Pratinjau Cetak — ' + opts.judul, wrap, footBtn);
+  }
+
+  // ------------------------------------------------------------------
   // Factory CRUD generik untuk master data sederhana (kode unik, toggle aktif)
   // ------------------------------------------------------------------
   function crudSimple(opts) {
@@ -340,12 +379,22 @@
     }
     sel.addEventListener('change', drawQr);
     if (rows.length) drawQr();
-    async function cetak() {
+    function cetak() {
       const id = sel.value; if (!id) return;
+      const aset = rows.find(r => r.id_aset === id);
       const qrBase64 = qrHolder.toDataURL('image/png');
-      const r = await api('cetak_label_qr', { id_aset: id, qrBase64 });
-      if (r.success) window.open(r.data.url, '_blank');
-      UI.toast(r.success ? 'Label PDF dibuat.' : r.message, r.success ? 'success' : 'error');
+      const previewImg = el('img', { src: qrBase64, style: 'width:120px;height:120px;display:block;margin:0 auto 8px' });
+      previewCetak({
+        judul: 'Label QR — ' + id,
+        extraNode: previewImg,
+        columns: [{ key: 'field', label: 'Field' }, { key: 'value', label: 'Isi' }],
+        rows: [{ field: 'Kode Aset', value: id }, { field: 'Nama Aset', value: aset ? aset.nama : '-' }],
+        onCetak: async () => {
+          const r = await api('cetak_label_qr', { id_aset: id, qrBase64 });
+          if (r.success) window.open(r.data.url, '_blank');
+          UI.toast(r.success ? 'Label PDF dibuat.' : r.message, r.success ? 'success' : 'error');
+        }
+      });
     }
   }
 
@@ -385,7 +434,17 @@
         { key: 'pihak_1', label: 'Pihak 1' }, { key: 'pihak_2', label: 'Pihak 2' }
       ], rows, { actions: (row) => el('button', { class: 'btn btn-secondary btn-sm', onclick: () => cetak(row) }, ['Cetak PDF']) });
     }
-    async function cetak(row) { const r = await api('cetak_berita_acara', { id_ba: row.id_ba }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); if (r.success) load(true); }
+    function cetak(row) {
+      previewCetak({
+        judul: 'Berita Acara ' + row.nomor_ba,
+        columns: [{ key: 'field', label: 'Field' }, { key: 'value', label: 'Isi' }],
+        rows: [
+          { field: 'Nomor BA', value: row.nomor_ba }, { field: 'Jenis', value: row.jenis }, { field: 'Tanggal', value: UI.tgl(row.tanggal) },
+          { field: 'Pihak 1 (Penyerah)', value: row.pihak_1 }, { field: 'Pihak 2 (Penerima)', value: row.pihak_2 }, { field: 'Ringkasan', value: row.ringkasan || '-' }
+        ],
+        onCetak: async () => { const r = await api('cetak_berita_acara', { id_ba: row.id_ba }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); if (r.success) load(true); }
+      });
+    }
     function openForm() {
       const fields = [
         { key: 'jenis', label: 'Jenis', type: 'select', options: [{ value: 'Serah Terima Barang', label: 'Serah Terima Barang' }, { value: 'Mutasi', label: 'Mutasi' }, { value: 'Pemusnahan', label: 'Pemusnahan' }], required: true },
@@ -688,10 +747,18 @@
     const btnCetak = el('button', { class: 'btn btn-primary', onclick: cetak }, ['Cetak PDF']);
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [sel, btnCetak]));
     const tableMount = section(mount), totalEl = el('div', { class: 'mt-8 muted' }, ['']); mount.appendChild(totalEl);
-    async function load() { const r = await api('laporanKIB', { kategori: sel.value }); const data = r.success ? r.data : { rows: [], total: 0 }; totalEl.textContent = 'Total nilai: ' + UI.rupiah(data.total); UI.dataTable(tableMount, [
-      { key: 'id_aset', label: 'Kode Aset', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'tahun_perolehan', label: 'Tahun' }, { key: 'nilai_perolehan', label: 'Nilai', type: 'rupiah' }, { key: 'kondisi', label: 'Kondisi', type: 'badge' }
-    ], data.rows); }
-    async function cetak() { const r = await api('cetak_kib', { kategori: sel.value }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); }
+    const kolomKIB = [{ key: 'id_aset', label: 'Kode Aset', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'tahun_perolehan', label: 'Tahun' }, { key: 'nilai_perolehan', label: 'Nilai', type: 'rupiah' }, { key: 'kondisi', label: 'Kondisi', type: 'badge' }];
+    let lastData = { rows: [], total: 0 };
+    async function load() { const r = await api('laporanKIB', { kategori: sel.value }); lastData = r.success ? r.data : { rows: [], total: 0 }; totalEl.textContent = 'Total nilai: ' + UI.rupiah(lastData.total); UI.dataTable(tableMount, kolomKIB, lastData.rows); }
+    function cetak() {
+      const labelKategori = opts.find(o => o.value === sel.value);
+      previewCetak({
+        judul: 'KIB — ' + (labelKategori ? labelKategori.label : 'Semua Kategori'),
+        infoLines: [lastData.rows.length + ' item', 'Total nilai: ' + UI.rupiah(lastData.total)],
+        columns: kolomKIB, rows: lastData.rows,
+        onCetak: async () => { const r = await api('cetak_kib', { kategori: sel.value }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); }
+      });
+    }
     sel.addEventListener('change', load); load();
   }
   async function laporanKIR(mount) {
@@ -700,35 +767,64 @@
     const btnCetak = el('button', { class: 'btn btn-primary', onclick: cetak }, ['Cetak PDF']);
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [sel, btnCetak]));
     const tableMount = section(mount);
-    async function load() { const r = await api('laporanKIR', { ruangan: sel.value }); const data = (r.success ? r.data : [])[0]; UI.dataTable(tableMount, [
-      { key: 'id_aset', label: 'Kode Aset', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'kondisi', label: 'Kondisi', type: 'badge' }
-    ], data ? data.aset : []); }
-    async function cetak() { const r = await api('cetak_kir', { ruangan: sel.value }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); }
+    const kolomKIR = [{ key: 'id_aset', label: 'Kode Aset', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'kondisi', label: 'Kondisi', type: 'badge' }];
+    let lastRows = [];
+    async function load() { const r = await api('laporanKIR', { ruangan: sel.value }); const data = (r.success ? r.data : [])[0]; lastRows = data ? data.aset : []; UI.dataTable(tableMount, kolomKIR, lastRows); }
+    function cetak() {
+      const ruanganSel = ref.ruangan.find(x => x.id_ruangan === sel.value);
+      previewCetak({
+        judul: 'KIR — ' + (ruanganSel ? ruanganSel.nama_ruangan : sel.value),
+        infoLines: [lastRows.length + ' item'],
+        columns: kolomKIR, rows: lastRows,
+        onCetak: async () => { const r = await api('cetak_kir', { ruangan: sel.value }); if (r.success) window.open(r.data.url, '_blank'); UI.toast(r.success ? 'PDF dibuat.' : r.message, r.success ? 'success' : 'error'); }
+      });
+    }
     sel.addEventListener('change', load); if (ref.ruangan.length) load();
   }
   async function laporanBuku(mount) {
     const btnCetak = el('button', { class: 'btn btn-primary', onclick: cetak }, ['Cetak PDF']);
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [btnCetak]));
     const tableMount = section(mount);
+    const kolomBuku = [{ key: 'id_aset', label: 'Kode', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'kode_barang', label: 'Kategori' }, { key: 'tahun_perolehan', label: 'Tahun' }, { key: 'nilai_perolehan', label: 'Nilai', type: 'rupiah' }, { key: 'status', label: 'Status', type: 'badge' }];
     const r = await api('laporanBukuInventaris', {});
-    UI.dataTable(tableMount, [{ key: 'id_aset', label: 'Kode', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'kode_barang', label: 'Kategori' }, { key: 'tahun_perolehan', label: 'Tahun' }, { key: 'nilai_perolehan', label: 'Nilai', type: 'rupiah' }, { key: 'status', label: 'Status', type: 'badge' }], r.success ? r.data : []);
-    async function cetak() { const res = await api('cetak_buku_inventaris', {}); if (res.success) window.open(res.data.url, '_blank'); UI.toast(res.success ? 'PDF dibuat.' : res.message, res.success ? 'success' : 'error'); }
+    const rows = r.success ? r.data : [];
+    UI.dataTable(tableMount, kolomBuku, rows);
+    function cetak() {
+      previewCetak({
+        judul: 'Buku Inventaris', infoLines: [rows.length + ' item'], columns: kolomBuku, rows: rows,
+        onCetak: async () => { const res = await api('cetak_buku_inventaris', {}); if (res.success) window.open(res.data.url, '_blank'); UI.toast(res.success ? 'PDF dibuat.' : res.message, res.success ? 'success' : 'error'); }
+      });
+    }
   }
   async function laporanMutasi(mount) {
     const btnCetak = el('button', { class: 'btn btn-primary', onclick: cetak }, ['Cetak PDF']);
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [btnCetak]));
     const tableMount = section(mount);
+    const kolomMutasi = [{ key: 'id_mutasi', label: 'ID', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'asal', label: 'Asal' }, { key: 'tujuan', label: 'Tujuan' }, { key: 'tanggal', label: 'Tanggal', type: 'tanggal' }];
     const r = await api('laporanMutasi', {});
-    UI.dataTable(tableMount, [{ key: 'id_mutasi', label: 'ID', type: 'code' }, { key: 'id_aset', label: 'Aset' }, { key: 'asal', label: 'Asal' }, { key: 'tujuan', label: 'Tujuan' }, { key: 'tanggal', label: 'Tanggal', type: 'tanggal' }], r.success ? r.data : []);
-    async function cetak() { const res = await api('cetak_mutasi', {}); if (res.success) window.open(res.data.url, '_blank'); UI.toast(res.success ? 'PDF dibuat.' : res.message, res.success ? 'success' : 'error'); }
+    const rows = r.success ? r.data : [];
+    UI.dataTable(tableMount, kolomMutasi, rows);
+    function cetak() {
+      previewCetak({
+        judul: 'Laporan Mutasi', infoLines: [rows.length + ' item'], columns: kolomMutasi, rows: rows,
+        onCetak: async () => { const res = await api('cetak_mutasi', {}); if (res.success) window.open(res.data.url, '_blank'); UI.toast(res.success ? 'PDF dibuat.' : res.message, res.success ? 'success' : 'error'); }
+      });
+    }
   }
   async function laporanPenyusutan(mount) {
     const btnCetak = el('button', { class: 'btn btn-primary', onclick: cetak }, ['Cetak PDF']);
     mount.appendChild(el('div', { class: 'toolbar', style: 'margin-bottom:10px' }, [btnCetak]));
     const tableMount = section(mount);
+    const kolomPenyusutan = [{ key: 'id_aset', label: 'Kode', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'nilai_perolehan', label: 'Nilai Perolehan', type: 'rupiah' }, { key: 'akumulasi_penyusutan', label: 'Akumulasi Susut', type: 'rupiah' }, { key: 'nilai_buku', label: 'Nilai Buku', type: 'rupiah' }];
     const r = await api('laporanPenyusutan', {});
-    UI.dataTable(tableMount, [{ key: 'id_aset', label: 'Kode', type: 'code' }, { key: 'nama', label: 'Nama' }, { key: 'nilai_perolehan', label: 'Nilai Perolehan', type: 'rupiah' }, { key: 'akumulasi_penyusutan', label: 'Akumulasi Susut', type: 'rupiah' }, { key: 'nilai_buku', label: 'Nilai Buku', type: 'rupiah' }], r.success ? r.data : []);
-    async function cetak() { const res = await api('cetak_penyusutan', {}); if (res.success) window.open(res.data.url, '_blank'); UI.toast(res.success ? 'PDF dibuat.' : res.message, res.success ? 'success' : 'error'); }
+    const rows = r.success ? r.data : [];
+    UI.dataTable(tableMount, kolomPenyusutan, rows);
+    function cetak() {
+      previewCetak({
+        judul: 'Laporan Penyusutan', infoLines: [rows.length + ' item'], columns: kolomPenyusutan, rows: rows,
+        onCetak: async () => { const res = await api('cetak_penyusutan', {}); if (res.success) window.open(res.data.url, '_blank'); UI.toast(res.success ? 'PDF dibuat.' : res.message, res.success ? 'success' : 'error'); }
+      });
+    }
   }
 
   // ------------------------------------------------------------------
